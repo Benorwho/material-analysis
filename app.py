@@ -290,7 +290,7 @@ if uploaded_files_list:
     metrics_calc = ['UTS (MPa)', 'Elongation (%)', 'Modulus (MPa)', 'Toughness (MPa)']
     pivoted = df_filtered.pivot(index='SampleCode', columns='RH', values=metrics_calc)
     
-    if len(groups) >= 2:
+if len(groups) >= 2:
         # Calculate % Change between first two groups (e.g., 50RH to 75RH)
         g1, g2 = groups[0], groups[1]
         pct_df = pd.DataFrame(index=pivoted.index)
@@ -300,4 +300,89 @@ if uploaded_files_list:
                 col_a, col_b = (m, g1), (m, g2)
                 # Pivot creates MultiIndex, access strictly
                 if col_a in pivoted.columns and col_b in pivoted.columns:
-                     pct_df[f"{m} Δ%"] = 100 * (pivoted[col_b] / pivoted[col
+                     pct_df[f"{m} Δ%"] = 100 * (pivoted[col_b] / pivoted[col_a] - 1)
+            except: pass
+            
+        st.dataframe(pct_df.style.format("{:.2f}%"))
+    else:
+        st.info("Need at least 2 RH groups to calculate percentage change.")
+
+    # --- C. RAW CURVES ---
+    st.subheader("〰️ Stress-Strain Curves")
+    
+    # Sort by Toughness Retention if possible
+    plot_codes = samples
+    if len(groups) >= 2 and plot_top_num > 0:
+        # Try to find toughness retention
+        try:
+            toughness_col = 'Toughness (MPa)'
+            g1, g2 = groups[0], groups[1]
+            # Re-calculate specific ratio for sorting
+            piv_tough = df_filtered.pivot(index='SampleCode', columns='RH', values=toughness_col)
+            ratio_series = piv_tough[g2] / piv_tough[g1]
+            plot_codes = ratio_series.sort_values(ascending=False).head(plot_top_num).index.tolist()
+        except:
+            plot_codes = samples[:plot_top_num] # Fallback
+    elif plot_top_num > 0:
+        plot_codes = samples[:plot_top_num]
+        
+    fig_curve, ax_curve = plt.subplots(figsize=(14, 8))
+    
+    # Generate Colors
+    colors = plt.cm.tab10(np.linspace(0, 1, len(plot_codes)))
+    color_map = dict(zip(plot_codes, colors))
+    
+    # Plot Solid Lines (First Group / 50RH)
+    plotted_labels = []
+    
+    # Sort names to prioritize plot_codes
+    all_curve_names = sorted(data_dict.keys())
+    
+    for name in all_curve_names:
+        # Find which sample code this belongs to
+        base_code = None
+        for code in plot_codes:
+            if code in name:
+                base_code = code
+                break
+        
+        if not base_code: continue # Skip if not in top list
+        
+        df_c = data_dict[name]
+        is_secondary = '-75RH' in name or '-90RH' in name # Heuristic for dashed
+        
+        linestyle = '--' if is_secondary else '-'
+        alpha = 0.6 if is_secondary else 1.0
+        label = base_code if not is_secondary else "_nolegend_"
+        
+        # Avoid duplicate labels
+        if label in plotted_labels: label = "_nolegend_"
+        else: plotted_labels.append(label)
+            
+        ax_curve.plot(df_c['X-axis meas'], df_c['Y-axis meas'], 
+                      color=color_map[base_code], linestyle=linestyle, 
+                      linewidth=2, label=label, alpha=alpha)
+
+    ax_curve.set_xlabel("Strain (%)")
+    ax_curve.set_ylabel("Stress (MPa)")
+    ax_curve.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax_curve.grid(True, linestyle=':', alpha=0.6)
+    
+    st.pyplot(fig_curve)
+
+    # --- D. EXCEL DOWNLOAD ---
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_results.to_excel(writer, sheet_name='All Results')
+        if 'pct_df' in locals():
+            pct_df.to_excel(writer, sheet_name='Pct Change')
+            
+    st.download_button(
+        label="📥 Download Analysis Excel",
+        data=output.getvalue(),
+        file_name="Material_Analysis_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+else:
+    st.info("👆 Please upload CSV files in the sidebar to begin.")
