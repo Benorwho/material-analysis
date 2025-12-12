@@ -290,7 +290,7 @@ if uploaded_files_list:
     metrics_calc = ['UTS (MPa)', 'Elongation (%)', 'Modulus (MPa)', 'Toughness (MPa)']
     pivoted = df_filtered.pivot(index='SampleCode', columns='RH', values=metrics_calc)
     
-if len(groups) >= 2:
+    if len(groups) >= 2:
         # Calculate % Change between first two groups (e.g., 50RH to 75RH)
         g1, g2 = groups[0], groups[1]
         pct_df = pd.DataFrame(index=pivoted.index)
